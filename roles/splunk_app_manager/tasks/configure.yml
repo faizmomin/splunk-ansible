@@ -36,7 +36,7 @@
     - key: remoteBundle
       value: "{{ splunk_app_manager_remote_bundle }}"
 
-- name: Keep the Noah client disabled on ingestors
+- name: Keep the Noah client disabled for the bundle-sync-only POC
   ini_file:
     dest: "{{ splunk_app_manager_target }}/local/server.conf"
     section: noahService
@@ -45,18 +45,9 @@
     owner: "{{ splunk.user }}"
     group: "{{ splunk.group }}"
     mode: "0660"
-  when: splunk.role == "splunk_ingestor"
-
-- name: Leave Noah client enablement to Linus on Noah client roles
-  ini_file:
-    dest: "{{ splunk_app_manager_target }}/local/server.conf"
-    section: noahService
-    option: disabled
-    state: absent
-    owner: "{{ splunk.user }}"
-    group: "{{ splunk.group }}"
-    mode: "0660"
-  when: splunk.role != "splunk_ingestor"
+  # SPL-313974 will determine the full Noah client configuration and when
+  # Linus enables it. remoteBundle remains readable by App Manager while the
+  # client is disabled; an enabled stanza without uri aborts Splunk 10.6.
 
 - name: Enable the role-aware App Manager sync input
   ini_file:

@@ -28,8 +28,10 @@ existing directory. If activation fails, the role restores the old payload.
 The role writes:
 
 - `100-app-manager/local/server.conf`, containing the stack-specific Noah
-  bundle location and cloud provider (and `disabled=true` on ingestors, which
-  consume the bundle without acting as Noah clients);
+  bundle location and cloud provider. This bundle-sync-only POC sets
+  `disabled=true` for the Splunk Noah client on every supported role. App
+  Manager still reads `remoteBundle` directly. SPL-313974 will define the
+  complete Noah client configuration and enablement for Linus;
 - `100-app-manager/local/inputs.conf`, enabling `configs_sync.py`;
 - `etc/aws_ec2_region_cache`, used by the Splunk Python AWS helpers.
 

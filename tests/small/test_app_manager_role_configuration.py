@@ -90,14 +90,25 @@ def test_install_is_marker_based_staged_and_rollback_safe():
 
 
 def test_role_owns_only_app_manager_local_configuration():
+    tasks = load_yaml("roles/splunk_app_manager/tasks/configure.yml")
     text = read_file("roles/splunk_app_manager/tasks/configure.yml")
 
     assert "{{ splunk_app_manager_target }}/local/server.conf" in text
     assert "{{ splunk_app_manager_target }}/local/inputs.conf" in text
     assert "splunk_app_manager_sync_stanza" in text
-    assert "Keep the Noah client disabled on ingestors" in text
-    assert "splunk.role == \"splunk_ingestor\"" in text
-    assert "option: disabled" in text
+    noah_disabled = named_task(
+        tasks, "Keep the Noah client disabled for the bundle-sync-only POC"
+    )
+    assert noah_disabled["ini_file"]["section"] == "noahService"
+    assert noah_disabled["ini_file"]["option"] == "disabled"
+    assert noah_disabled["ini_file"]["value"] == "true"
+    assert "when" not in noah_disabled
+    assert not any(
+        task.get("ini_file", {}).get("section") == "noahService"
+        and task.get("ini_file", {}).get("option") == "disabled"
+        and task.get("ini_file", {}).get("state") == "absent"
+        for task in tasks
+    )
     assert 'value: "0"' in text
     assert "option: run_only_one" in text
     assert "splunk.role == \"splunk_search_head\"" in text
