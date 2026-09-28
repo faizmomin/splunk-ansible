@@ -43,7 +43,10 @@ def test_common_role_installs_app_manager_at_the_prestart_boundary():
     install = named_task(tasks, "Install and configure App Manager before full splunkd startup")
 
     assert install["include_role"]["name"] == "splunk_app_manager"
-    assert install["when"] == "splunk_app_manager_enabled | default(false) | bool"
+    assert install["when"] == [
+        "splunk_app_manager_enabled | default(false) | bool",
+        'splunk.role in ["splunk_search_head", "splunk_indexer", "splunk_ingestor"]',
+    ]
 
     config_index = next(
         i for i, task in enumerate(tasks)

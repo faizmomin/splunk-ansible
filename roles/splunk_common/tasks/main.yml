@@ -153,7 +153,9 @@
 - name: Install and configure App Manager before full splunkd startup
   include_role:
     name: splunk_app_manager
-  when: splunk_app_manager_enabled | default(false) | bool
+  when:
+    - splunk_app_manager_enabled | default(false) | bool
+    - splunk.role in ["splunk_search_head", "splunk_indexer", "splunk_ingestor"]
 
 - name: Check SHC participant process state before declarative configuration
   include_tasks: get_splunk_status.yml
