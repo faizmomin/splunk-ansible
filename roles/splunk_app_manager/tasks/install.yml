@@ -1,0 +1,199 @@
+---
+- name: Check for an interrupted App Manager replacement
+  stat:
+    path: "{{ splunk_app_manager_backup }}"
+  register: splunk_app_manager_interrupted_backup
+
+- name: Check the live App Manager target before recovery
+  stat:
+    path: "{{ splunk_app_manager_target }}"
+  register: splunk_app_manager_target_before_recovery
+
+- name: Restore App Manager after an interrupted replacement
+  command:
+    argv:
+      - mv
+      - "{{ splunk_app_manager_backup }}"
+      - "{{ splunk_app_manager_target }}"
+  when:
+    - splunk_app_manager_interrupted_backup.stat.exists
+    - not splunk_app_manager_target_before_recovery.stat.exists
+
+- name: Remove a stale App Manager backup after completed replacement
+  file:
+    path: "{{ splunk_app_manager_backup }}"
+    state: absent
+  when:
+    - splunk_app_manager_interrupted_backup.stat.exists
+    - splunk_app_manager_target_before_recovery.stat.exists
+
+- name: Check the installed App Manager payload
+  stat:
+    path: "{{ splunk_app_manager_target }}/default/app.conf"
+  register: splunk_app_manager_installed_app
+
+- name: Check the installed App Manager source marker
+  stat:
+    path: "{{ splunk_app_manager_source_marker }}"
+  register: splunk_app_manager_installed_marker
+
+- name: Read the installed App Manager source marker
+  slurp:
+    src: "{{ splunk_app_manager_source_marker }}"
+  register: splunk_app_manager_installed_source
+  when: splunk_app_manager_installed_marker.stat.exists
+
+- name: Decide whether App Manager must be installed
+  set_fact:
+    splunk_app_manager_install_required: >-
+      {{
+        not splunk_app_manager_installed_app.stat.exists
+        or not splunk_app_manager_installed_marker.stat.exists
+        or (splunk_app_manager_installed_source.content | default('') | b64decode | trim)
+           != splunk_app_manager_archive_uri
+      }}
+
+- name: Install the selected App Manager artifact
+  when: splunk_app_manager_install_required | bool
+  block:
+    - name: Remove stale App Manager staging data
+      file:
+        path: "{{ splunk_app_manager_staging_root }}"
+        state: absent
+
+    - name: Create the App Manager staging directory
+      file:
+        path: "{{ splunk_app_manager_staging_root }}"
+        state: directory
+        owner: "{{ splunk.user }}"
+        group: "{{ splunk.group }}"
+        mode: "0770"
+
+    - name: Check the AWS CLI used to fetch App Manager
+      stat:
+        path: "{{ splunk_app_manager_aws_cli }}"
+      register: splunk_app_manager_aws_cli_stat
+
+    - name: Require the AWS CLI used to fetch App Manager
+      assert:
+        that:
+          - splunk_app_manager_aws_cli_stat.stat.exists
+          - splunk_app_manager_aws_cli_stat.stat.executable
+        fail_msg: >-
+          The App Manager role requires an executable AWS CLI at
+          {{ splunk_app_manager_aws_cli }}.
+
+    - name: Download the selected App Manager artifact
+      command:
+        argv:
+          - "{{ splunk_app_manager_aws_cli }}"
+          - s3
+          - cp
+          - "{{ splunk_app_manager_archive_uri }}"
+          - "{{ splunk_app_manager_archive_path }}"
+          - --only-show-errors
+      environment:
+        AWS_REGION: "{{ splunk_app_manager_aws_region }}"
+        AWS_DEFAULT_REGION: "{{ splunk_app_manager_aws_region }}"
+      changed_when: true
+
+    - name: Extract App Manager into staging
+      unarchive:
+        src: "{{ splunk_app_manager_archive_path }}"
+        dest: "{{ splunk_app_manager_staging_root }}"
+        remote_src: true
+        owner: "{{ splunk.user }}"
+        group: "{{ splunk.group }}"
+
+    - name: Validate the staged App Manager payload
+      stat:
+        path: "{{ splunk_app_manager_staging_root }}/{{ splunk_app_manager_app_id }}/default/app.conf"
+      register: splunk_app_manager_staged_app
+
+    - name: Require the expected App Manager package layout
+      assert:
+        that:
+          - splunk_app_manager_staged_app.stat.exists
+          - splunk_app_manager_staged_app.stat.isreg
+        fail_msg: >-
+          The artifact must contain
+          {{ splunk_app_manager_app_id }}/default/app.conf.
+
+    - name: Find symbolic links in the staged App Manager payload
+      find:
+        paths: "{{ splunk_app_manager_staging_root }}/{{ splunk_app_manager_app_id }}"
+        recurse: true
+        file_type: link
+      register: splunk_app_manager_staged_links
+
+    - name: Reject symbolic links in the App Manager payload
+      assert:
+        that:
+          - splunk_app_manager_staged_links.matched == 0
+        fail_msg: App Manager payloads must not contain symbolic links.
+
+    - name: Check whether an App Manager target already exists
+      stat:
+        path: "{{ splunk_app_manager_target }}"
+      register: splunk_app_manager_existing_target
+
+    - name: Preserve the existing App Manager target during replacement
+      command:
+        argv:
+          - mv
+          - "{{ splunk_app_manager_target }}"
+          - "{{ splunk_app_manager_backup }}"
+      when: splunk_app_manager_existing_target.stat.exists
+
+    - name: Activate the staged App Manager payload
+      command:
+        argv:
+          - mv
+          - "{{ splunk_app_manager_staging_root }}/{{ splunk_app_manager_app_id }}"
+          - "{{ splunk_app_manager_target }}"
+      register: splunk_app_manager_target_activated
+
+    - name: Record the installed App Manager artifact
+      copy:
+        content: "{{ splunk_app_manager_archive_uri }}\n"
+        dest: "{{ splunk_app_manager_source_marker }}"
+        owner: "{{ splunk.user }}"
+        group: "{{ splunk.group }}"
+        mode: "0660"
+
+    - name: Remove the replaced App Manager payload
+      file:
+        path: "{{ splunk_app_manager_backup }}"
+        state: absent
+
+  rescue:
+    - name: Check for the preserved App Manager payload
+      stat:
+        path: "{{ splunk_app_manager_backup }}"
+      register: splunk_app_manager_preserved_target
+
+    - name: Remove an incomplete activated App Manager payload
+      file:
+        path: "{{ splunk_app_manager_target }}"
+        state: absent
+      when:
+        - splunk_app_manager_preserved_target.stat.exists or
+          (splunk_app_manager_target_activated is defined and splunk_app_manager_target_activated is changed)
+
+    - name: Restore the preserved App Manager payload
+      command:
+        argv:
+          - mv
+          - "{{ splunk_app_manager_backup }}"
+          - "{{ splunk_app_manager_target }}"
+      when: splunk_app_manager_preserved_target.stat.exists
+
+    - name: Fail the App Manager installation after rollback
+      fail:
+        msg: App Manager installation failed; the previous payload was restored when one existed.
+
+  always:
+    - name: Remove App Manager installation scratch data
+      file:
+        path: "{{ splunk_app_manager_staging_root }}"
+        state: absent

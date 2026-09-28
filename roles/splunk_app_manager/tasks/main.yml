@@ -1,0 +1,33 @@
+---
+- name: Validate the App Manager target role
+  assert:
+    that:
+      - ansible_system is match("Linux")
+      - splunk.role in splunk_app_manager_supported_roles
+    fail_msg: >-
+      App Manager supports only Linux search-head, indexer, and ingestor nodes;
+      received SPLUNK_ROLE={{ splunk.role }}.
+
+- name: Validate the App Manager artifact source
+  assert:
+    that:
+      - splunk_app_manager_archive_uri | length > 0
+      - splunk_app_manager_archive_uri is match("^s3://[^/]+/.+")
+    fail_msg: >-
+      splunk_app_manager_archive_uri must be an exact s3:// object URI for a
+      100-app-manager tarball.
+
+- name: Validate the App Manager Noah bundle settings
+  assert:
+    that:
+      - splunk_app_manager_cloud_provider == "aws"
+      - splunk_app_manager_remote_bundle | length > 0
+      - splunk_app_manager_remote_bundle is match("^s3://[^/]+(/.*)?$")
+      - splunk_app_manager_aws_region | length > 0
+    fail_msg: >-
+      The App Manager POC requires cloud_provider=aws, an s3:// remote bundle,
+      and splunk_app_manager_aws_region.
+
+- include_tasks: install.yml
+
+- include_tasks: configure.yml

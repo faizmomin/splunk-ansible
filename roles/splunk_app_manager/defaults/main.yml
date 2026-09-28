@@ -1,0 +1,22 @@
+---
+splunk_app_manager_enabled: false
+splunk_app_manager_supported_roles:
+  - splunk_search_head
+  - splunk_indexer
+  - splunk_ingestor
+
+splunk_app_manager_app_id: 100-app-manager
+splunk_app_manager_archive_uri: ""
+splunk_app_manager_remote_bundle: ""
+splunk_app_manager_cloud_provider: aws
+splunk_app_manager_aws_region: ""
+
+splunk_app_manager_aws_cli: "{{ splunk.home }}/bin/aws"
+splunk_app_manager_apps_root: "{{ splunk.home }}/etc/apps"
+splunk_app_manager_target: "{{ splunk_app_manager_apps_root }}/{{ splunk_app_manager_app_id }}"
+splunk_app_manager_staging_root: "{{ splunk_app_manager_apps_root }}/.{{ splunk_app_manager_app_id }}.ansible-stage"
+splunk_app_manager_backup: "{{ splunk_app_manager_apps_root }}/.{{ splunk_app_manager_app_id }}.ansible-backup"
+splunk_app_manager_archive_path: "{{ splunk_app_manager_staging_root }}/app-manager.tgz"
+splunk_app_manager_source_marker: "{{ splunk_app_manager_target }}/.splunk-ansible-source"
+splunk_app_manager_sync_script: configs_sync.py
+splunk_app_manager_sync_stanza: "script://$SPLUNK_HOME/etc/apps/{{ splunk_app_manager_app_id }}/bin/{{ splunk_app_manager_sync_script }}"

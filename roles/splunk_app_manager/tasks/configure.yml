@@ -1,0 +1,101 @@
+---
+- name: Check the installed App Manager sync script
+  stat:
+    path: "{{ splunk_app_manager_target }}/bin/{{ splunk_app_manager_sync_script }}"
+  register: splunk_app_manager_sync_script_stat
+
+- name: Require the role-aware App Manager sync script
+  assert:
+    that:
+      - splunk_app_manager_sync_script_stat.stat.exists
+      - splunk_app_manager_sync_script_stat.stat.isreg
+    fail_msg: >-
+      The selected App Manager artifact does not contain
+      bin/{{ splunk_app_manager_sync_script }}.
+
+- name: Create the App Manager local configuration directory
+  file:
+    path: "{{ splunk_app_manager_target }}/local"
+    state: directory
+    owner: "{{ splunk.user }}"
+    group: "{{ splunk.group }}"
+    mode: "0770"
+
+- name: Configure the App Manager Noah bundle source
+  ini_file:
+    dest: "{{ splunk_app_manager_target }}/local/server.conf"
+    section: noahService
+    option: "{{ item.key }}"
+    value: "{{ item.value }}"
+    owner: "{{ splunk.user }}"
+    group: "{{ splunk.group }}"
+    mode: "0660"
+  loop:
+    - key: cloud_provider
+      value: "{{ splunk_app_manager_cloud_provider }}"
+    - key: remoteBundle
+      value: "{{ splunk_app_manager_remote_bundle }}"
+
+- name: Keep the Noah client disabled on ingestors
+  ini_file:
+    dest: "{{ splunk_app_manager_target }}/local/server.conf"
+    section: noahService
+    option: disabled
+    value: "true"
+    owner: "{{ splunk.user }}"
+    group: "{{ splunk.group }}"
+    mode: "0660"
+  when: splunk.role == "splunk_ingestor"
+
+- name: Leave Noah client enablement to Linus on Noah client roles
+  ini_file:
+    dest: "{{ splunk_app_manager_target }}/local/server.conf"
+    section: noahService
+    option: disabled
+    state: absent
+    owner: "{{ splunk.user }}"
+    group: "{{ splunk.group }}"
+    mode: "0660"
+  when: splunk.role != "splunk_ingestor"
+
+- name: Enable the role-aware App Manager sync input
+  ini_file:
+    dest: "{{ splunk_app_manager_target }}/local/inputs.conf"
+    section: "{{ splunk_app_manager_sync_stanza }}"
+    option: disabled
+    value: "0"
+    owner: "{{ splunk.user }}"
+    group: "{{ splunk.group }}"
+    mode: "0660"
+
+- name: Run App Manager sync on every search-head cluster member
+  ini_file:
+    dest: "{{ splunk_app_manager_target }}/local/inputs.conf"
+    section: "{{ splunk_app_manager_sync_stanza }}"
+    option: run_only_one
+    value: "false"
+    owner: "{{ splunk.user }}"
+    group: "{{ splunk.group }}"
+    mode: "0660"
+  when: splunk.role == "splunk_search_head"
+
+- name: Remove search-head-only input behavior from other roles
+  ini_file:
+    dest: "{{ splunk_app_manager_target }}/local/inputs.conf"
+    section: "{{ splunk_app_manager_sync_stanza }}"
+    option: run_only_one
+    state: absent
+    owner: "{{ splunk.user }}"
+    group: "{{ splunk.group }}"
+    mode: "0660"
+  when: splunk.role != "splunk_search_head"
+
+- name: Cache the AWS region for the Splunk Python runtime
+  copy:
+    content: |
+      [REGION]
+      AWS_EC2_REGION = {{ splunk_app_manager_aws_region }}
+    dest: "{{ splunk.home }}/etc/aws_ec2_region_cache"
+    owner: "{{ splunk.user }}"
+    group: "{{ splunk.group }}"
+    mode: "0660"

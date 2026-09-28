@@ -150,6 +150,11 @@
     tasks_from: post_config
   when: splunk_noah_enabled | default(false) | bool
 
+- name: Install and configure App Manager before full splunkd startup
+  include_role:
+    name: splunk_app_manager
+  when: splunk_app_manager_enabled | default(false) | bool
+
 - name: Check SHC participant process state before declarative configuration
   include_tasks: get_splunk_status.yml
   when:
